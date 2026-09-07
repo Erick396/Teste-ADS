@@ -1,0 +1,193 @@
+-- LocalScript: TestInterface.lua
+-- Interface de testes autorizados
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local remote = ReplicatedStorage:WaitForChild("TestToolRemote")
+
+-- Configurações
+local DEFAULT_SPEED = 16
+local MAX_SPEED = 100
+local MAX_DISTANCE = 1000
+
+-- Variáveis
+local savedPositions = {}
+local selectedPosition = nil
+local dragging = false
+local dragOffset = nil
+
+-- Funções auxiliares
+local function setupCharacter()
+    local character = player.Character or player.CharacterAdded:Wait()
+    return character
+end
+
+local function updatePlayerInfo(infoFrame)
+    RunService.RenderStepped:Connect(function()
+        local character = player.Character
+        if character and character:FindFirstChild("Humanoid") and character:FindFirstChild("HumanoidRootPart") then
+            local humanoid = character.Humanoid
+            local hrp = character.HumanoidRootPart
+            infoFrame.PlayerName.Text = "Jogador: " .. player.Name
+            infoFrame.Speed.Text = "Velocidade: " .. humanoid.WalkSpeed
+            infoFrame.Position.Text = string.format("Posição: X=%.1f Y=%.1f Z=%.1f", hrp.Position.X, hrp.Position.Y, hrp.Position.Z)
+        end
+    end)
+end
+
+local function setWalkSpeed(value)
+    if tonumber(value) and value > 0 and value <= MAX_SPEED then
+        remote:FireServer("SetSpeed", value)
+    end
+end
+
+local function resetWalkSpeed()
+    remote:FireServer("SetSpeed", DEFAULT_SPEED)
+end
+
+local function teleportToPosition(x, y, z)
+    if tonumber(x) and tonumber(y) and tonumber(z) then
+        remote:FireServer("Teleport", Vector3.new(x, y, z))
+    end
+end
+
+local function saveCurrentPosition(name)
+    local character = player.Character
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        if #savedPositions < 5 then
+            table.insert(savedPositions, {Name = name, Position = character.HumanoidRootPart.Position})
+        end
+    end
+end
+
+local function teleportToSavedPosition(index)
+    if savedPositions[index] then
+        remote:FireServer("Teleport", savedPositions[index].Position)
+    end
+end
+
+local function deleteSavedPosition(index)
+    if savedPositions[index] then
+        table.remove(savedPositions, index)
+    end
+end
+
+-- Criação da interface
+local function createInterface()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "TestInterface"
+    screenGui.Parent = player:WaitForChild("PlayerGui")
+
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 300, 0, 400)
+    mainFrame.Position = UDim2.new(0.3, 0, 0.3, 0)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    mainFrame.Parent = screenGui
+
+    -- Botões de controle
+    local closeButton = Instance.new("TextButton")
+    closeButton.Size = UDim2.new(0, 30, 0, 30)
+    closeButton.Position = UDim2.new(1, -35, 0, 5)
+    closeButton.Text = "X"
+    closeButton.Parent = mainFrame
+    closeButton.MouseButton1Click:Connect(function()
+        screenGui:Destroy()
+    end)
+
+    local minimizeButton = Instance.new("TextButton")
+    minimizeButton.Size = UDim2.new(0, 30, 0, 30)
+    minimizeButton.Position = UDim2.new(1, -70, 0, 5)
+    minimizeButton.Text = "-"
+    minimizeButton.Parent = mainFrame
+    minimizeButton.MouseButton1Click:Connect(function()
+        mainFrame.Visible = not mainFrame.Visible
+    end)
+
+    -- Informações do jogador
+    local infoFrame = Instance.new("Frame")
+    infoFrame.Size = UDim2.new(1, -10, 0, 100)
+    infoFrame.Position = UDim2.new(0, 5, 0, 40)
+    infoFrame.BackgroundTransparency = 1
+    infoFrame.Parent = mainFrame
+
+    local playerName = Instance.new("TextLabel")
+    playerName.Name = "PlayerName"
+    playerName.Size = UDim2.new(1, 0, 0, 20)
+    playerName.TextColor3 = Color3.new(1,1,1)
+    playerName.Parent = infoFrame
+
+    local speedLabel = Instance.new("TextLabel")
+    speedLabel.Name = "Speed"
+    speedLabel.Size = UDim2.new(1, 0, 0, 20)
+    speedLabel.Position = UDim2.new(0,0,0,25)
+    speedLabel.TextColor3 = Color3.new(1,1,1)
+    speedLabel.Parent = infoFrame
+
+    local positionLabel = Instance.new("TextLabel")
+    positionLabel.Name = "Position"
+    positionLabel.Size = UDim2.new(1, 0, 0, 20)
+    positionLabel.Position = UDim2.new(0,0,0,50)
+    positionLabel.TextColor3 = Color3.new(1,1,1)
+    positionLabel.Parent = infoFrame
+
+    updatePlayerInfo(infoFrame)
+
+    -- Campos de velocidade
+    local speedBox = Instance.new("TextBox")
+    speedBox.Size = UDim2.new(0, 100, 0, 30)
+    speedBox.Position = UDim2.new(0, 10, 0, 150)
+    speedBox.PlaceholderText = "Velocidade"
+    speedBox.Parent = mainFrame
+
+    local applySpeed = Instance.new("TextButton")
+    applySpeed.Size = UDim2.new(0, 100, 0, 30)
+    applySpeed.Position = UDim2.new(0, 120, 0, 150)
+    applySpeed.Text = "Aplicar"
+    applySpeed.Parent = mainFrame
+    applySpeed.MouseButton1Click:Connect(function()
+        setWalkSpeed(tonumber(speedBox.Text))
+    end)
+
+    local resetSpeed = Instance.new("TextButton")
+    resetSpeed.Size = UDim2.new(0, 100, 0, 30)
+    resetSpeed.Position = UDim2.new(0, 120, 0, 190)
+    resetSpeed.Text = "Resetar"
+    resetSpeed.Parent = mainFrame
+    resetSpeed.MouseButton1Click:Connect(resetWalkSpeed)
+
+    -- Campos de teleporte
+    local xBox = Instance.new("TextBox")
+    xBox.Size = UDim2.new(0, 80, 0, 30)
+    xBox.Position = UDim2.new(0, 10, 0, 240)
+    xBox.PlaceholderText = "X"
+    xBox.Parent = mainFrame
+
+    local yBox = Instance.new("TextBox")
+    yBox.Size = UDim2.new(0, 80, 0, 30)
+    yBox.Position = UDim2.new(0, 100, 0, 240)
+    yBox.PlaceholderText = "Y"
+    yBox.Parent = mainFrame
+
+    local zBox = Instance.new("TextBox")
+    zBox.Size = UDim2.new(0, 80, 0, 30)
+    zBox.Position = UDim2.new(0, 190, 0, 240)
+    zBox.PlaceholderText = "Z"
+    zBox.Parent = mainFrame
+
+    local teleportButton = Instance.new("TextButton")
+    teleportButton.Size = UDim2.new(0, 100, 0, 30)
+    teleportButton.Position = UDim2.new(0, 100, 0, 280)
+    teleportButton.Text = "Teleportar"
+    teleportButton.Parent = mainFrame
+    teleportButton.MouseButton1Click:Connect(function()
+        teleportToPosition(xBox.Text, yBox.Text, zBox.Text)
+    end)
+end
+
+createInterface()
